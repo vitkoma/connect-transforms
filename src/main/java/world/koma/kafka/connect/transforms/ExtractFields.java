@@ -131,11 +131,20 @@ public abstract class ExtractFields<R extends ConnectRecord<R>> implements Trans
 
                 for (var i = targetPath.iterator(); i.hasNext();) {
                     var namePart = i.next();
+                    var isList = false;
+                    if (namePart.endsWith("[0]")) {
+                        isList = true;
+                        namePart = namePart.substring(0, namePart.length() - 3);
+                    }
                     if (i.hasNext()) {
                         var nestedMap = valueMap.get(namePart);
-                        if (!(nestedMap instanceof Map)) {
+                        if (!valueMap.containsKey(namePart)) {
                             nestedMap = new HashMap<String, Object>();
-                            valueMap.put(namePart, nestedMap);
+                            if (isList) {
+                                valueMap.put(namePart, List.of(nestedMap));
+                            } else {
+                                valueMap.put(namePart, nestedMap);
+                            }
                         }
                         valueMap = (Map<String, Object>) nestedMap;
                     } else {
@@ -158,7 +167,7 @@ public abstract class ExtractFields<R extends ConnectRecord<R>> implements Trans
             schemaUpdateCache.put(value.schema(), targetSchema);
         }
 
-        final Struct targetValue = buildWithSchema(value, targetSchema, fieldNamesReversed);
+        final var targetValue = buildWithSchema(value, targetSchema, fieldNamesReversed);
         return newRecord(record, targetSchema, targetValue);
 
     }
@@ -170,26 +179,44 @@ public abstract class ExtractFields<R extends ConnectRecord<R>> implements Trans
     private SchemaBuilder makeTargetSchema(Schema sourceSchema, Map<String, Object> targetPaths) {
         final var struct = SchemaBuilder.struct();
         for (var field: targetPaths.entrySet()) {
+            var fieldName = field.getKey();
+            var isArray = false;
+            if (fieldName.endsWith("[0]")) {
+                isArray = true;
+                fieldName = fieldName.substring(0, fieldName.length() - 3);
+            }
             if (field.getValue() instanceof Map) {
-                struct.field(field.getKey(), makeTargetSchema(sourceSchema, (Map<String, Object>) field.getValue()));
+                if (isArray) {
+                    struct.field(fieldName, SchemaBuilder.array(makeTargetSchema(sourceSchema, (Map<String, Object>) field.getValue())));
+                } else {
+                    struct.field(fieldName, makeTargetSchema(sourceSchema, (Map<String, Object>) field.getValue()));
+                }
             } else {
-                struct.field(field.getKey(), sourceSchema.field((String) field.getValue()).schema());
+                struct.field(fieldName, sourceSchema.field((String) field.getValue()).schema());
             }
         }
         return struct;
     }
 
-    private Struct buildWithSchema(Struct record, Schema targetSchema, Map<String, Object> targetPaths) {
-        final Struct struct = new Struct(targetSchema);
-        for (var field: targetPaths.entrySet()) {
-            if (field.getValue() instanceof Map) {
-                struct.put(field.getKey(),
-                        buildWithSchema(record, targetSchema.field(field.getKey()).schema(), (Map<String, Object>) field.getValue()));
-            } else {
-                struct.put(field.getKey(), record.get((String) field.getValue()));
+    private Object buildWithSchema(Struct record, Schema targetSchema, Map<String, Object> targetPaths) {
+        if (targetSchema.type() == Schema.Type.ARRAY) {
+            return List.of(buildWithSchema(record, targetSchema.valueSchema(), targetPaths));
+        } else {
+            final Struct struct = new Struct(targetSchema);
+            for (var field : targetPaths.entrySet()) {
+                var fieldName = field.getKey();
+                if (fieldName.endsWith("[0]")) {
+                    fieldName = fieldName.substring(0, fieldName.length() - 3);
+                }
+                if (field.getValue() instanceof Map) {
+                    struct.put(fieldName,
+                            buildWithSchema(record, targetSchema.field(fieldName).schema(), (Map<String, Object>) field.getValue()));
+                } else {
+                    struct.put(fieldName, record.get((String) field.getValue()));
+                }
             }
+            return struct;
         }
-        return struct;
     }
 
     @Override

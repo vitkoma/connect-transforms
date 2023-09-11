@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -60,7 +61,7 @@ class ExtractFieldsTest {
     @Test
     public void schemaless() {
         final Map<String, String> props = new HashMap<>();
-        props.put("fields", "abc:xyz,foo:nested.bar,fox:nested.box,etc:another.nested.etc");
+        props.put("fields", "abc:xyz,foo:nested.bar,fox:nested.box,etc:another.nested[0].etc");
 
         xform.configure(props);
 
@@ -79,13 +80,13 @@ class ExtractFieldsTest {
         assertEquals(42, updatedValue.get("xyz"));
         assertEquals(true, ((Map) updatedValue.get("nested")).get("bar"));
         assertEquals(false, ((Map) updatedValue.get("nested")).get("box"));
-        assertEquals("bury", ((Map) ((Map) updatedValue.get("another")).get("nested")).get("etc"));
+        assertEquals("bury", ((Map) ((List) ((Map) updatedValue.get("another")).get("nested")).get(0)).get("etc"));
     }
 
     @Test
     public void withSchema() {
         final Map<String, String> props = new HashMap<>();
-        props.put("fields", "abc:xyz,foo:nested.bar,fox:nested.box,etc:another.nested.etc");
+        props.put("fields", "abc:xyz,foo:nested.bar,fox:nested.box,etc:another.nested[0].etc");
 
         xform.configure(props);
 
@@ -113,6 +114,6 @@ class ExtractFieldsTest {
         assertEquals(Integer.valueOf(42), updatedValue.getInt32("xyz"));
         assertEquals(true, updatedValue.getStruct("nested").getBoolean("bar"));
         assertEquals(false, updatedValue.getStruct("nested").getBoolean("box"));
-        assertEquals("bury", updatedValue.getStruct("another").getStruct("nested").getString("etc"));
+        assertEquals("bury", ((Struct) updatedValue.getStruct("another").getArray("nested").get(0)).getString("etc"));
     }
 }
